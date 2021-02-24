@@ -238,10 +238,12 @@ while True:
         if angle_to_corner1 >= 0 and angle_to_corner2 >= 0:
             print("Front Case 1")
             width_of_box = 0.6
-            print(width_of_box)
+            length_iso = 1.23
+            #print(width_of_box)
             theta3 = angle_to_corner2 - angle_to_corner1
-            theta33 = (math.sin(math.radians(theta3)) / width_of_box) * distance_to_corner2
-            print("theta3 :", theta3, "theta33 :", theta33)
+            theta33 = (math.sin(math.radians(theta3)) / width_of_box) * distance_to_corner2  #law of Sines
+            print("theta 33 =", theta33)
+            #print("theta3 :", theta3, "theta33 :", theta33)
             theta4 = 180 - math.asin(theta33) * 180 / (math.pi)
 
             theta5 = theta4 - 76
@@ -249,16 +251,16 @@ while True:
             pr = math.cos(math.radians(theta5))
             # print(pr)
             distance_to_destination = math.sqrt(
-                (distance_to_corner1 * distance_to_corner1) + (1.23 * 1.23) - 2 * distance_to_corner1 * 1.23 * (pr))
+                (distance_to_corner1 * distance_to_corner1) + (length_iso * length_iso) - 2 * distance_to_corner1 * length_iso * (pr))     #law of cosines
             # print(distance_to_destination)
             theta7 = 180 - theta3 - theta4
             theta8 = 76 - theta7
             pr2 = (math.sin(math.radians(theta8)) / distance_to_destination) * 1.23
-            print(pr2)
-            print("angle_to_corner1 =", angle_to_corner1, "angle_to_corner2 =", angle_to_corner2, "theta3 =", theta3,
-                  "theta4 =", theta4, "theta5 =", theta5, "theta7 =", theta7, "theta8 =", theta8)
+            #print(pr2)
+            print("angle_to_corner1 =", angle_to_corner1, "angle_to_corner2 =", angle_to_corner2, "theta3 =", theta3, "theta4 =", theta4, "theta5 =", theta5, "theta7 =", theta7, "theta8 =", theta8)
             beta = math.asin(pr2) * 180 / (math.pi)
-            print("Turning by", beta, "degrees and travelling", distance_to_destination, "metres")
+            turn_angle = beta + theta3
+            print("Turning by", turn_angle, "degrees and travelling", distance_to_destination, "metres")
 
         #Case 2: If TB is at front of the Front side
         if angle_to_corner1 < 0 and angle_to_corner2 >= 0:

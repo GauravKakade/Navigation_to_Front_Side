@@ -1,28 +1,18 @@
 import cv2
 import numpy as np
 import time
+import pyrealsense2 as rs
 from ensemble_boxes import *
+import rospy
+#import tf
+import actionlib
+from move_base_msgs.msg import MoveBaseAction, MoveBaseGoal
+
 import math
-from vidgear.gears import NetGear
-import imagiz
-
 # Load Yolo
-server=imagiz.Server()
-options = {"flag": 0, "copy": False, "track": False}
-
-client = NetGear(
-    address="192.168.1.213",
-    port="3456",
-    protocol="tcp",
-    pattern=0,
-    receive_mode=True,
-    logging=True,
-    **options
-)
-
 netdepth = cv2.dnn.readNet("custom-yolov4-tiny-detector_best.weights", "custom-yolov4-tiny-detector.cfg")
 net = cv2.dnn.readNet("custom-yolov4-tiny-detector-7000-rgb.weights", "custom-yolov4-tiny-detector-rgb.cfg")
-
+rospy.init_node('reference_frame')
 
 classes = []
 with open("coco.names", "r") as f:
@@ -31,18 +21,32 @@ layer_names = netdepth.getLayerNames()
 output_layers = [layer_names[i[0] - 1] for i in netdepth.getUnconnectedOutLayers()]
 colors = np.random.uniform(0, 255, size=(len(classes), 3))
 
-
+# Loading image
+cap = cv2.VideoCapture(6)
+pipeline = rs.pipeline()
+config = rs.config()
+config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
+pipeline.start(config)
 
 font = cv2.FONT_HERSHEY_SIMPLEX
 starting_time = time.time()
 frame_id = 0
 while True:
+    frames = pipeline.wait_for_frames()
+    depth_frame = frames.get_depth_frame()
+    depth_image = np.asanyarray(depth_frame.get_data())
+    global depth_colormap
+    depth_colormap = cv2.applyColorMap(cv2.convertScaleAbs(depth_image, alpha=0.03), cv2.COLORMAP_JET)
+    #cv2.namedWindow('Gaurav', cv2.WINDOW_AUTOSIZE)
+    #cv2.imshow('RealSense', depth_colormap)
+    cv2.waitKey(1)
 
-    depth3 = client.recv()  # vidgear
-    depth_colormap = cv2.applyColorMap(cv2.convertScaleAbs(depth3, alpha=0.03), cv2.COLORMAP_JET)
-    message = server.receive()
-    frame = cv2.imdecode(message.image, 1)
+
+
+    _, frame = cap.read()
     frame_id += 1
+    _, frame2 = cap.read()
+
     height, width, channels = depth_colormap.shape
 
     # Detecting objects
@@ -127,14 +131,7 @@ while True:
             hh = h
             cv2.rectangle(depth_colormap, (x, y), (x + w, y + h), color, 2)
             cv2.putText(depth_colormap, label + " " + str(round(confidence, 2)), (x, y + 30), font, 2, color, 3)
-            cv2.circle(depth_colormap, (int(x + w/2), int(y + h/3)), radius=15, color=(255, 255, 0), thickness=-1) #for Z depth
-
-            cv2.circle(depth_colormap, (int(xx + ww/6), int(yy + hh/3)), radius=15, color=(255, 255, 0), thickness=-1) #for Corner1
-
-            cv2.circle(depth_colormap, (int(xx + ww - ww/6), int(yy + hh/3)), radius=15, color=(255, 255, 0), thickness=-1) #for Corner2
-
-
-            ##print("theta1 =", angle_to_corner1, "and theta2 =", angle_to_corner2)
+            cv2.circle(depth_colormap, (int(xx + ww/2), int(yy + hh/3)), radius=15, color=(255, 255, 0), thickness=-1) #for Z depth
             depth_detection = True
 
 
@@ -178,8 +175,6 @@ while True:
             color = colors[class_ids_rgb[i]]
             cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
             cv2.putText(frame, label + " " + str(round(confidence, 2)), (x, y + 30), font, 2, color, 3)
-            #distance_to_corner1 = round(depth3.get_distance(int(x + w / 6), int(y + h / 3)), 2)
-            print('center depth:', depth3[x, y])
             rgb_detection = True
 
     # For display of RGB
@@ -209,12 +204,9 @@ while True:
             #print(int(boxes_wbm[0][0]*1000))
             cv2.rectangle(frame2, ((int(boxes_wbm[0][0]*1000)), (int(boxes_wbm[0][1]*1000))), ((int(boxes_wbm[0][2]*1000)), (int(boxes_wbm[0][3]*1000))), color2, 2)
             cv2.imshow("Weighted Boxes Fusion", frame2)
-            depth = depth3.get_distance(int(xx + ww / 2), int(yy + hh / 3))
-            distance_to_corner1 = round(depth3.get_distance(int(xx + ww/6), int(yy + hh/3)), 2)
-            distance_to_corner2 = round(depth3.get_distance(int(xx + ww - ww/6), int(yy + hh/3)), 2)
-            angle_to_corner1 = int(((int(xx + ww/6) - 320) / (320)) * (43))
-            angle_to_corner2 = int(((int(xx + ww - ww/6) - 320) / (320)) * (43))
-            print("distance_to_corner1", distance_to_corner1, "distance_to_corner2", distance_to_corner2)
+            hypotenuse = round(depth_frame.get_distance(int(xx + ww/2), int(yy + hh/3)), 1)
+            theta = int(((int(xx + ww/2) - 320) / (320)) * (43))   #angle to center
+            print("Hypotenuse", hypotenuse, "theta", theta)
             #print("Z-depth from camera surface to ", label, "side is", depth, "metres")
 
             if Class_id_for_matching1 == Class_id_for_matching2 == 0:
@@ -236,41 +228,25 @@ while True:
 
     #Code if Front side detected
     if front_side_detected == True:
-        print("theta1 =", angle_to_corner1, "and theta2 =", angle_to_corner2)
     #Case 1: If TB is at left of the Front side
-        if angle_to_corner1 >= 0 and angle_to_corner2 >= 0:
-            print("Front Case 1")
-            width_of_box = 0.6
-            print(width_of_box)
-            theta3 = angle_to_corner2 - angle_to_corner1
-            theta33 = (math.sin(math.radians(theta3)) / width_of_box) * distance_to_corner2
-            print("theta3 :", theta3, "theta33 :", theta33)
-            theta4 = 180 - math.asin(theta33) * 180 / (math.pi)
+        if theta >= 0:
+            print("Front Case 1: TurtleBot is left of Front")
+            theta_rad = math.radians(theta)
+            y1 = (round(math.sin(theta_rad) * hypotenuse, 1)) * -1
+            x1 = round(math.cos(theta_rad) * hypotenuse, 1)
+            print("x1=", x1, "y1=", y1)
+            #br = tf.TransformBroadcaster()
+            #rate = rospy.Rate(10.0)
+            #br.sendTransform((0.0, 2.0, 0.0), (0.0, 0.0, 0.0, 0.5), rospy.Time.now(), "carrot1", "base_link")
+            #rate.sleep()
 
-            theta5 = theta4 - 76
-            # print(theta5)
-            pr = math.cos(math.radians(theta5))
-            # print(pr)
-            distance_to_destination = math.sqrt(
-                (distance_to_corner1 * distance_to_corner1) + (1.23 * 1.23) - 2 * distance_to_corner1 * 1.23 * (pr))
-            # print(distance_to_destination)
-            theta7 = 180 - theta3 - theta4
-            theta8 = 76 - theta7
-            pr2 = (math.sin(math.radians(theta8)) / distance_to_destination) * 1.23
-            print(pr2)
-            print("angle_to_corner1 =", angle_to_corner1, "angle_to_corner2 =", angle_to_corner2, "theta3 =", theta3,
-                  "theta4 =", theta4, "theta5 =", theta5, "theta7 =", theta7, "theta8 =", theta8)
-            beta = math.asin(pr2) * 180 / (math.pi)
-            print("Turning by", beta, "degrees and travelling", distance_to_destination, "metres")
-
-        #Case 2: If TB is at front of the Front side
-        if angle_to_corner1 < 0 and angle_to_corner2 >= 0:
-            print("Front Case 2")
-
-        # Case 3: If TB is at right of the Front side
-        if angle_to_corner1 < 0 and angle_to_corner2 >= 0:
-            print("Front Case 3")
-        #use same logic as for Front Case 1
+        # Case 2: If TB is at right of the Front side
+        if theta <= 0:
+            print("Front Case 2: TurtleBot is to the right of Front")
+            theta_rad = math.radians(abs(theta))
+            y1 = round(math.sin(theta_rad) * hypotenuse, 1)
+            x1 = round(math.cos(theta_rad) * hypotenuse, 1)
+            print("x1=", x1, "y1=", y1)
 
 
 
@@ -296,4 +272,4 @@ while True:
 
 cap.release()
 cv2.destroyAllWindows()
-client.close()
+
