@@ -1,0 +1,3 @@
+<launch>
+  <node pkg="end_position_generator" type="code77.py" name="end_position_generation" />
+</launch>
